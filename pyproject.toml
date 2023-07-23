@@ -9,6 +9,7 @@ packages = [{include = "chatgpt_to_wordpress"}]
 [tool.poetry.dependencies]
 python = "^3.10"
 sqlalchemy = "^2.0.19"
+praw = "^7.7.1"
 
 
 [build-system]
