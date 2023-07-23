@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "chatgpt-to-wordpress"
+version = "0.1.0"
+description = ""
+authors = ["Keith Whitson <keith.whitson@franka.de>"]
+readme = "README.md"
+packages = [{include = "chatgpt_to_wordpress"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
