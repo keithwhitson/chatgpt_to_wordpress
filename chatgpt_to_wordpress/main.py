@@ -1,7 +1,11 @@
 import praw
 from models import Trend, session
 from typing import List
-from config import my_client_id, my_client_secret, my_user_agent, my_refresh_token
+from config import my_client_id, my_client_secret, my_user_agent, my_refresh_token, openapi_key
+from typing import Optional
+import openai
+from sqlalchemy import and_
+openai.api_key = openapi_key
 
 def get_all_trends_in_db() -> List[str]:
     """
@@ -53,5 +57,52 @@ def process_reddit_trends_01(num_trends:int=1) -> None:
 
     return None
 
-print(get_all_trends_in_db())
-process_reddit_trends_01()
+
+def generate_article_title(keyword: str) -> Optional[str]:
+    """
+    Generates a title for an article about the given keyword using OpenAI's GPT-3 API.
+
+    Args:
+        keyword (str): The keyword to generate a title for.
+
+    Returns:
+        Optional[str]: The generated title, or None if no title was generated.
+    """
+    prompt: str = f"Generate a title for an article about {keyword}."
+    response: openai.Completion = openai.Completion.create(
+        engine="text-davinci-003",
+        prompt=prompt,
+        max_tokens=30,
+        n=1,
+        stop=None,
+        temperature=0.7,
+    )
+    only_choice = response.choices[0].text.strip()
+    return only_choice if only_choice else None
+
+
+def process_article_title_trends_02() -> None:
+    """
+    Generate article titles for trends that don't have a title yet.
+
+    This function queries the database for trends that have a `trend_name` but no `title`,
+    generates an article title for each trend using the `generate_article_title` function,
+    and updates the `title` attribute of each trend with the generated title.
+
+    Returns:
+        None.
+    """
+    with session.begin_nested():
+        trends: List[Trend] = session.query(Trend).filter(
+            and_(Trend.trend_name.isnot(None), Trend.title.is_(None))).limit(1).all()
+
+        titles: List[str] = [generate_article_title(trend.trend_name) for trend in trends]
+
+        for trend, title in zip(trends, titles):
+            title: str = generate_article_title(trend.trend_name)
+            trend.title = title
+
+
+#print(get_all_trends_in_db())
+#process_article_title_trends_02()
+#process_reddit_trends_01()

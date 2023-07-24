@@ -1,0 +1,5 @@
+{
+    "python.analysis.extraPaths": [
+        "./chatgpt_to_wordpress"
+    ]
+}
