@@ -2,7 +2,7 @@ import base64
 import praw
 from models import Trend, session
 from typing import Any, Dict, List, Union
-from config import my_client_id, my_client_secret, my_user_agent, my_refresh_token, openapi_key, application_password, api_base_url, username, tags_url
+from config import my_client_id, my_client_secret, my_user_agent, my_refresh_token, openapi_key, application_password, api_base_url, username, tags_url, auth_header
 from typing import Optional
 import openai
 openai.api_key = openapi_key
@@ -223,14 +223,7 @@ def update_article(postId: int, content: str, title: str, status: str = "draft")
     Returns:
         Optional[Dict[str, Any]]: A dictionary containing the updated post data, or None if the update failed.
     """
-    with open('config.json', 'r') as config_file:
-        keys: dict = json.load(config_file)
-        username: str = keys["username"]
-        api_base_url: str = keys["api_base_url"]
-        application_password: str = keys["application_password"]
 
-    auth_header: str = f"{username}:{application_password}"
-    auth_header = base64.b64encode(auth_header.encode("utf-8")).decode("utf-8")
     headers: Dict[str, str] = {"Authorization": f"Basic {auth_header}"}
 
     post_data: Dict[str, Any] = {
@@ -359,8 +352,7 @@ def tags_on_wordpress_check_and_update(tags_from_article: List[str]) -> None:
         except:
             print(f'New tag: {tag}')
             post_data: Dict[str, str] = {'name': tag.strip()}
-            auth_header: str = f"{username}:{application_password}"
-            auth_header = base64.b64encode(auth_header.encode("utf-8")).decode("utf-8")
+
             headers: Dict[str, str] = {"Authorization": f"Basic {auth_header}"}
             response = requests.post(f"{api_base_url}tags", headers=headers, json=post_data)
             print(f"Response: {response.status_code}")
@@ -375,16 +367,10 @@ def add_tags_to_article(tags_array: List[int], article_id: int) -> None:
     for tag in tags_array:
         tags.append({'id': tag})
     print(tags)
-    with open('config.json', 'r') as config_file:
-        keys: Dict[str, str] = json.load(config_file)
-        username: str = keys["username"]
-        application_password: str = keys["application_password"]
     url: str = f"https://www.blacktwitter.eu/wp-json/wp/v2/posts/{article_id}"
     t_: Dict[str, List[Dict[str, int]]] = {'tags': tags}
     t_['name'] = 'newtag'
     print(t_)
-    auth_header: str = f"{username}:{application_password}"
-    auth_header = base64.b64encode(auth_header.encode("utf-8")).decode("utf-8")
     headers: Dict[str, str] = {"Authorization": f"Basic {auth_header}"}
     response = requests.post(url, headers=headers, json=t_)
     print(f"Response: {response.status_code}")
@@ -400,7 +386,7 @@ def ensure_all_tags_exist() -> None:
             except Exception as e:
                 print(e)
                 pass
-            
+
 def process_article_tags_07() -> None:
     """
     Processes article tags for all trends in the database that have article tags but no tags added to the article yet.
@@ -408,7 +394,7 @@ def process_article_tags_07() -> None:
     If a tag is found, it is added to the list of found tags. If not, it is added to the list of not found tags.
     The list of found tags is then added to the article using the WordPress API.
     """
-    
+
     with session.begin_nested():
         all_trends = session.query(Trend).filter(and_(Trend.article_tags.isnot(None), Trend.article_tags_added.is_(None))).all()
         for trend in all_trends:
@@ -425,13 +411,6 @@ def process_article_tags_07() -> None:
                     print(e)
             postData: Dict[str, List[int]] = {}
             postData['tags'] = found_tags
-            # with open('config.json', 'r') as config_file:
-            #     keys: Dict[str, str] = json.load(config_file)
-            #     username: str = keys["username"]
-            #     api_base_url: str = keys["api_base_url"]
-            #     application_password: str = keys["application_password"]
-            auth_header: str = f"{username}:{application_password}"
-            auth_header = base64.b64encode(auth_header.encode("utf-8")).decode("utf-8")
             headers: Dict[str, str] = {"Authorization": f"Basic {auth_header}"}
             try:
                 response = requests.post(f"{api_base_url}posts/{trend.article_id}", headers=headers, json=postData)
@@ -443,6 +422,36 @@ def process_article_tags_07() -> None:
                 pass
             print(f"Status Code: {response.status_code}")
 
+def process_article_excerpts_08() -> None:
+    """
+    Generates a two sentence synopsis of each article in the database that has a title, article_id, article, article_excerpt, article_tags, and article_status.
+    Uses OpenAI's text-davinci-003 engine to generate the synopsis.
+    The generated synopsis is then added to the article_excerpt field in the database.
+    """
+
+    with session.begin_nested():
+        all_trends: List[Trend] = session.query(Trend).filter(and_(
+            Trend.title.isnot(None),
+            Trend.article_excerpt.is_(None),
+        ))
+
+        for idx, trend in enumerate(all_trends):
+            print(f"{idx} - {trend.title}")
+            try:
+                response = openai.Completion.create(
+                    engine="text-davinci-003",
+                    prompt=f"Write a two sentence synopsis of [{trend.title}].",
+                    max_tokens=50,
+                    n=1,
+                    stop=None,
+                    temperature=0.7
+                )
+                only_choice: str = response.choices[0].text.strip()
+                trend.article_excerpt = only_choice
+            except Exception as e:
+                print(e)
+                break
+
 if __name__ == '__main__':
     process_reddit_trends_01()
     process_article_title_trends_02()
@@ -451,3 +460,4 @@ if __name__ == '__main__':
     process_article_update_05()
     process_article_tags_generation_06()
     process_article_tags_07()
+    process_article_excerpts_08()
