@@ -1,11 +1,17 @@
+import base64
 import praw
 from models import Trend, session
-from typing import List
-from config import my_client_id, my_client_secret, my_user_agent, my_refresh_token, openapi_key
+from typing import Any, Dict, List, Union
+from config import my_client_id, my_client_secret, my_user_agent, my_refresh_token, openapi_key, application_password, api_base_url, username
 from typing import Optional
 import openai
 openai.api_key = openapi_key
 from sqlalchemy import and_
+import json
+import requests
+AuthHeader = Dict[str, str]
+PostData = Dict[str, Union[str, Any]]
+APIResponse = Union[Dict[str, Any], None]
 
 
 def get_all_trends_in_db() -> List[str]:
@@ -104,6 +110,52 @@ def process_article_title_trends_02() -> None:
             trend.title = title
 
 
+def create_article(title: str, content: str, status: str = "draft") -> Optional[Dict[str, Any]]:
+    """
+    Creates a new article in WordPress with the given title and content.
+
+    Args:
+        title (str): The title of the article.
+        content (str): The content of the article.
+        status (str, optional): The status of the article. Defaults to "draft".
+
+    Returns:
+        Optional[Dict[str, Any]]: A dictionary containing information about the created article, or None if the article was not created.
+    """
+    auth_header: AuthHeader = {}
+    auth_header["Authorization"] = f"Basic {base64.b64encode((username + ':' + application_password).encode()).decode()}"
+
+    post_data: PostData = {
+        "title": title,
+        "content": content,
+        "status": status
+    }
+
+    response: APIResponse = requests.post(f"{api_base_url}posts", headers=auth_header, json=post_data)
+
+    if response.status_code == 201:
+        return response.json()
+    else:
+        print(f"Error creating article: {response.json()}")
+        return None
+
+def process_article_creation_03() -> None:
+    """
+    Create articles for trends that have a title but no article.
+
+    This function queries the database for trends that have a `trend_name` and `title` but no `article_id`,
+    creates an article for each trend using the `create_article` function,
+    and updates the `article_id` attribute of each trend with the ID of the created article.
+
+    Returns:
+        None.
+    """
+    with session.begin_nested():
+        trends: List[Trend] = session.query(Trend).filter(Trend.article_id.is_(None), Trend.title.isnot(None)).all()
+        [create_article(trend.title.replace('"', ''), "This is a test article.")["id"] for trend in trends if create_article(trend.title.replace('"', ''), "This is a test article.")]
+        session.commit()
+
 if __name__ == '__main__':
     process_reddit_trends_01()
     process_article_title_trends_02()
+    process_article_creation_03()
