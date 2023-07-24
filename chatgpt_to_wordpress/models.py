@@ -14,6 +14,7 @@ class Trend(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     trend_name = Column(String)
     title = Column(String)
+    article_id = Column(Integer)
 
     def __repr__(self):
         return f'Trend(id={self.id}, trend_name={self.trend_name})'
