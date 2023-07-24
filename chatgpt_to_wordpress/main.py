@@ -2,7 +2,7 @@ import base64
 import praw
 from models import Trend, session
 from typing import Any, Dict, List, Union
-from config import my_client_id, my_client_secret, my_user_agent, my_refresh_token, openapi_key, application_password, api_base_url, username
+from config import my_client_id, my_client_secret, my_user_agent, my_refresh_token, openapi_key, application_password, api_base_url, username, tags_url
 from typing import Optional
 import openai
 openai.api_key = openapi_key
@@ -312,6 +312,72 @@ def process_article_tags_generation_06() -> None:
                 session.rollback()
 
     return None
+
+def get_tags() -> Dict[str, int]:
+    """
+    Retrieves all current tags from the WordPress site and returns them as a dictionary with tag names as keys and tag IDs as values.
+
+    Returns:
+        Dict[str, int]: A dictionary with tag names as keys and tag IDs as values.
+    """
+    all_current_tags_with_ids: Dict[str, int] = {}
+    params: Dict[str, int] = {'per_page': 10}
+    response = requests.get(tags_url, params=params)
+    total_tags: int = int(response.headers.get('X-WP-Total'))
+    tags_per_page: int = 10
+    total_pages: int = int(response.headers.get('X-WP-TotalPages'))
+    print(f'Total number of tags: {total_tags}')
+    print(f'Tags per page: {tags_per_page}')
+    print(f'Total number of pages: {total_pages}')
+
+    for page in range(1, total_pages + 1):
+        params = {'per_page': 10, 'page': page}
+        response = requests.get(tags_url, params=params)
+        tags = response.json()
+        for tag in tags:
+            all_current_tags_with_ids[tag['name']] = tag['id']
+    return all_current_tags_with_ids
+
+def tags_on_wordpress_check_and_update(tags_from_article: List[str]) -> None:
+    """
+    Checks if tags from an article already exist on the WordPress site and creates new tags if necessary.
+
+    This function takes a list of tags from an article and checks if each tag already exists on the WordPress site. If a tag does not exist, it creates a new tag using the WordPress API.
+
+    Args:
+        tags_from_article (List[str]): A list of tags from an article.
+
+    Returns:
+        None
+    """
+    current_tags = get_tags()
+    for tag in tags_from_article:
+        print(tag.strip())
+        try:
+            print(f'Current Tag: {tag}')
+            current_tags[tag.strip()]
+        except:
+            print(f'New tag: {tag}')
+            post_data: Dict[str, str] = {'name': tag.strip()}
+            auth_header: str = f"{username}:{application_password}"
+            auth_header = base64.b64encode(auth_header.encode("utf-8")).decode("utf-8")
+            headers: Dict[str, str] = {"Authorization": f"Basic {auth_header}"}
+            response = requests.post(f"{api_base_url}tags", headers=headers, json=post_data)
+            print(f"Response: {response.status_code}")
+            print(response.json())
+
+    return None
+
+def ensure_all_tags_exist_07() -> None:
+    with session.begin_nested():
+        trends = session.query(Trend).filter(and_(Trend.article_id != None, Trend.article != '', Trend.article_tags != None,Trend.article_status.isnot(True)),Trend.article_status.isnot('published')).all()
+        for trend in trends:
+            try:
+                tags = trend.article_tags.split(',')
+                tags_on_wordpress_check_and_update(tags)
+            except Exception as e:
+                print(e)
+                pass
 
 if __name__ == '__main__':
     process_reddit_trends_01()

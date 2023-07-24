@@ -19,6 +19,7 @@ class Trend(Base):
     article_wordpress_updated = Column(Boolean)
     timestamp=Column(String)
     article_tags = Column(String)
+    tags_on_wordpress_checked_and_updated = Column(Boolean)
 
     def __repr__(self):
         return f'Trend(id={self.id}, trend_name={self.trend_name}, title={self.title}, article_id={self.article_id}, article={self.article}, article_wordpress_updated={self.article_wordpress_updated})'
