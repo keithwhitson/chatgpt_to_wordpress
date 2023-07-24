@@ -4,8 +4,9 @@ from typing import List
 from config import my_client_id, my_client_secret, my_user_agent, my_refresh_token, openapi_key
 from typing import Optional
 import openai
-from sqlalchemy import and_
 openai.api_key = openapi_key
+from sqlalchemy import and_
+
 
 def get_all_trends_in_db() -> List[str]:
     """
@@ -103,6 +104,6 @@ def process_article_title_trends_02() -> None:
             trend.title = title
 
 
-#print(get_all_trends_in_db())
-#process_article_title_trends_02()
-#process_reddit_trends_01()
+if __name__ == '__main__':
+    process_reddit_trends_01()
+    process_article_title_trends_02()
