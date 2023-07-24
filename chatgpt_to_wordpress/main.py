@@ -2,7 +2,7 @@ import base64
 import praw
 from models import Trend, session
 from typing import Any, Dict, List, Union
-from config import my_client_id, my_client_secret, my_user_agent, my_refresh_token, openapi_key, application_password, api_base_url, username
+from config import my_client_id, my_client_secret, my_user_agent, my_refresh_token, openapi_key, application_password, api_base_url, username, tags_url, auth_header
 from typing import Optional
 import openai
 openai.api_key = openapi_key
@@ -223,14 +223,7 @@ def update_article(postId: int, content: str, title: str, status: str = "draft")
     Returns:
         Optional[Dict[str, Any]]: A dictionary containing the updated post data, or None if the update failed.
     """
-    with open('config.json', 'r') as config_file:
-        keys: dict = json.load(config_file)
-        username: str = keys["username"]
-        api_base_url: str = keys["api_base_url"]
-        application_password: str = keys["application_password"]
 
-    auth_header: str = f"{username}:{application_password}"
-    auth_header = base64.b64encode(auth_header.encode("utf-8")).decode("utf-8")
     headers: Dict[str, str] = {"Authorization": f"Basic {auth_header}"}
 
     post_data: Dict[str, Any] = {
@@ -313,6 +306,152 @@ def process_article_tags_generation_06() -> None:
 
     return None
 
+def get_tags() -> Dict[str, int]:
+    """
+    Retrieves all current tags from the WordPress site and returns them as a dictionary with tag names as keys and tag IDs as values.
+
+    Returns:
+        Dict[str, int]: A dictionary with tag names as keys and tag IDs as values.
+    """
+    all_current_tags_with_ids: Dict[str, int] = {}
+    params: Dict[str, int] = {'per_page': 10}
+    response = requests.get(tags_url, params=params)
+    total_tags: int = int(response.headers.get('X-WP-Total'))
+    tags_per_page: int = 10
+    total_pages: int = int(response.headers.get('X-WP-TotalPages'))
+    print(f'Total number of tags: {total_tags}')
+    print(f'Tags per page: {tags_per_page}')
+    print(f'Total number of pages: {total_pages}')
+
+    for page in range(1, total_pages + 1):
+        params = {'per_page': 10, 'page': page}
+        response = requests.get(tags_url, params=params)
+        tags = response.json()
+        for tag in tags:
+            all_current_tags_with_ids[tag['name']] = tag['id']
+    return all_current_tags_with_ids
+
+def tags_on_wordpress_check_and_update(tags_from_article: List[str]) -> None:
+    """
+    Checks if tags from an article already exist on the WordPress site and creates new tags if necessary.
+
+    This function takes a list of tags from an article and checks if each tag already exists on the WordPress site. If a tag does not exist, it creates a new tag using the WordPress API.
+
+    Args:
+        tags_from_article (List[str]): A list of tags from an article.
+
+    Returns:
+        None
+    """
+    current_tags = get_tags()
+    for tag in tags_from_article:
+        print(tag.strip())
+        try:
+            print(f'Current Tag: {tag}')
+            current_tags[tag.strip()]
+        except:
+            print(f'New tag: {tag}')
+            post_data: Dict[str, str] = {'name': tag.strip()}
+
+            headers: Dict[str, str] = {"Authorization": f"Basic {auth_header}"}
+            response = requests.post(f"{api_base_url}tags", headers=headers, json=post_data)
+            print(f"Response: {response.status_code}")
+            print(response.json())
+
+    return None
+
+def add_tags_to_article(tags_array: List[int], article_id: int) -> None:
+    print(article_id)
+    print(tags_array)
+    tags: List[Dict[str, int]] = []
+    for tag in tags_array:
+        tags.append({'id': tag})
+    print(tags)
+    url: str = f"https://www.blacktwitter.eu/wp-json/wp/v2/posts/{article_id}"
+    t_: Dict[str, List[Dict[str, int]]] = {'tags': tags}
+    t_['name'] = 'newtag'
+    print(t_)
+    headers: Dict[str, str] = {"Authorization": f"Basic {auth_header}"}
+    response = requests.post(url, headers=headers, json=t_)
+    print(f"Response: {response.status_code}")
+    print(response.json())
+
+def ensure_all_tags_exist() -> None:
+    with session.begin_nested():
+        trends = session.query(Trend).filter(and_(Trend.article_id != None, Trend.article != '', Trend.article_tags.is_(None))).all()
+        for trend in trends:
+            try:
+                tags = trend.article_tags.split(',')
+                tags_on_wordpress_check_and_update(tags)
+            except Exception as e:
+                print(e)
+                pass
+
+def process_article_tags_07() -> None:
+    """
+    Processes article tags for all trends in the database that have article tags but no tags added to the article yet.
+    Retrieves all tags from the database and loops through all trends to find tags that match.
+    If a tag is found, it is added to the list of found tags. If not, it is added to the list of not found tags.
+    The list of found tags is then added to the article using the WordPress API.
+    """
+
+    with session.begin_nested():
+        all_trends = session.query(Trend).filter(and_(Trend.article_tags.isnot(None), Trend.article_tags_added.is_(None))).all()
+        for trend in all_trends:
+            tags = get_tags()
+            ensure_all_tags_exist()
+            found_tags: List[int] = []
+            not_found_tags: List[str] = []
+            for tag in trend.article_tags.split(','):
+                try:
+                    tag_ = tag.strip()
+                    found_tags.append(tags[tag_])
+                except Exception as e:
+                    not_found_tags.append(tag_)
+                    print(e)
+            postData: Dict[str, List[int]] = {}
+            postData['tags'] = found_tags
+            headers: Dict[str, str] = {"Authorization": f"Basic {auth_header}"}
+            try:
+                response = requests.post(f"{api_base_url}posts/{trend.article_id}", headers=headers, json=postData)
+                trend.article_tags_added = True
+                trend.timestamp = f"{datetime.now()}:process_article_tags_07"
+            except Exception as e:
+                print(e)
+                print(f"Error: {trend.article_id}")
+                pass
+            print(f"Status Code: {response.status_code}")
+
+def process_article_excerpts_08() -> None:
+    """
+    Generates a two sentence synopsis of each article in the database that has a title, article_id, article, article_excerpt, article_tags, and article_status.
+    Uses OpenAI's text-davinci-003 engine to generate the synopsis.
+    The generated synopsis is then added to the article_excerpt field in the database.
+    """
+
+    with session.begin_nested():
+        all_trends: List[Trend] = session.query(Trend).filter(and_(
+            Trend.title.isnot(None),
+            Trend.article_excerpt.is_(None),
+        ))
+
+        for idx, trend in enumerate(all_trends):
+            print(f"{idx} - {trend.title}")
+            try:
+                response = openai.Completion.create(
+                    engine="text-davinci-003",
+                    prompt=f"Write a two sentence synopsis of [{trend.title}].",
+                    max_tokens=50,
+                    n=1,
+                    stop=None,
+                    temperature=0.7
+                )
+                only_choice: str = response.choices[0].text.strip()
+                trend.article_excerpt = only_choice
+            except Exception as e:
+                print(e)
+                break
+
 if __name__ == '__main__':
     process_reddit_trends_01()
     process_article_title_trends_02()
@@ -320,3 +459,5 @@ if __name__ == '__main__':
     process_article_content_generation_04()
     process_article_update_05()
     process_article_tags_generation_06()
+    process_article_tags_07()
+    process_article_excerpts_08()
