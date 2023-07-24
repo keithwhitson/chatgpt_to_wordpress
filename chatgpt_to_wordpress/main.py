@@ -269,6 +269,49 @@ def process_article_update_05() -> None:
             except Exception as e:
                 print(e)
 
+def generate_article_tags(keyword: str) -> Optional[str]:
+    """
+    Generates ten tags for an article about the given keyword using OpenAI's GPT-3 API.
+
+    Args:
+        keyword (str): The keyword to generate tags for.
+
+    Returns:
+        Optional[str]: A string of comma-separated tags without hashes, or None if no tags were generated.
+    """
+    prompt: str = f"Write ten tags for an article about this topic [{keyword}]. Create comma separated tags without hashes."
+    response = openai.Completion.create(
+        engine="text-davinci-003",
+        prompt=prompt,
+        max_tokens=50,
+        n=1,
+        stop=None,
+        temperature=0.7,
+    )
+    only_choice: str = response.choices[0].text.strip()
+    return only_choice if only_choice else None
+
+def process_article_tags_generation_06() -> None:
+    """
+    Generates tags for all articles in the database that have not been tagged yet.
+
+    This function retrieves all trends from the database that have an associated article but have not been tagged yet. It then generates tags for each article using OpenAI's GPT-3 API and saves the tags to the database.
+
+    Returns:
+        None
+    """
+    with session.begin_nested():
+        all_trends = session.query(Trend).filter(and_(Trend.article != '', Trend.article_tags.is_(None)))
+        for trend in all_trends:
+            try:
+                tags: Optional[str] = generate_article_tags(keyword=trend.title)
+                trend.article_tags = tags
+                trend.timestamp = f"{datetime.now()}:process_article_tags_generation_06"
+            except Exception as e:
+                print(e)
+                session.rollback()
+
+    return None
 
 if __name__ == '__main__':
     process_reddit_trends_01()
@@ -276,3 +319,4 @@ if __name__ == '__main__':
     process_article_creation_03()
     process_article_content_generation_04()
     process_article_update_05()
+    process_article_tags_generation_06()

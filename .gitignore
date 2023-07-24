@@ -1,2 +1,3 @@
 chatgpt_to_wordpress/__pycache__/
 config.json
+alembic/versions/__pycache__/
