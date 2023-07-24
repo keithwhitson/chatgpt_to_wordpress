@@ -32,6 +32,8 @@ def get_all_trends_in_db() -> List[str]:
     return all_trends_list
 
 
+from datetime import datetime
+
 def process_reddit_trends_01(num_trends:int=1) -> None:
     """
     Process the latest trends from the ChatGPT subreddit on Reddit and add them to the database.
@@ -56,7 +58,7 @@ def process_reddit_trends_01(num_trends:int=1) -> None:
     with session.begin_nested():
         for submission in hot_ChatGPT:
             if submission.title not in get_all_trends_in_db():
-                session.add(Trend(trend_name=submission.title))
+                session.add(Trend(trend_name=submission.title, timestamp=f"{datetime.now()}:process_reddit_trends_01"))
                 print(f"Added {submission.title} to the database.")
                 session.commit()
             else:
@@ -108,6 +110,7 @@ def process_article_title_trends_02() -> None:
         for trend, title in zip(trends, titles):
             title: str = generate_article_title(trend.trend_name)
             trend.title = title
+            trend.timestamp = f"{datetime.now()}:process_article_title_trends_02"
 
 
 def create_article(title: str, content: str, status: str = "draft") -> Optional[Dict[str, Any]]:
@@ -152,10 +155,124 @@ def process_article_creation_03() -> None:
     """
     with session.begin_nested():
         trends: List[Trend] = session.query(Trend).filter(Trend.article_id.is_(None), Trend.title.isnot(None)).all()
-        [create_article(trend.title.replace('"', ''), "This is a test article.")["id"] for trend in trends if create_article(trend.title.replace('"', ''), "This is a test article.")]
-        session.commit()
+        for trend in trends:
+            try:
+                title: str = trend.title.replace('"', '')
+                article: Optional[Dict[str, Any]] = create_article(title, "This is a test article.")
+                trend.article_id: Optional[int] = article["id"] if article else None
+                trend.timestamp = f"{datetime.now()}:process_article_creation_03"
+                session.add(trend)
+            except Exception as e:
+                print(e)
+                pass
+
+def generate_article_content(keyword: str) -> Optional[str]:
+    """
+    Generates an article content with 4 paragraphs about the given keyword with a call to action.
+
+    Args:
+        keyword (str): The keyword to generate the article about.
+
+    Returns:
+        Optional[str]: The generated article content, or None if the generation failed.
+    """
+    prompt: str = f"Generate an article with 4 paragraphs about {keyword} with a call to action."
+    response: openai.Response = openai.Completion.create(
+        engine="text-davinci-003",
+        prompt=prompt,
+        max_tokens=1000,
+        n=1,
+        stop=None,
+        temperature=0.7,
+    )
+    only_choice: str = response.choices[0].text.strip()
+    return only_choice if only_choice else None
+
+def process_article_content_generation_04() -> None:
+    """
+    Generates article content for all trends that have a title but no article content.
+
+    This function queries the database for trends that have a `trend_name` and `title` but no `article`,
+    generates article content for each trend using the `generate_article_content` function,
+    and updates the `article` attribute of each trend with the generated content.
+
+    Returns:
+        None.
+    """
+    with session.begin_nested():
+        all_trends: List[Trend] = session.query(Trend).filter(and_(Trend.title.isnot(None), Trend.article.is_(None))).all()
+        for trend in all_trends:
+            try:
+                article: Optional[str] = generate_article_content(trend.title)
+                trend.article = article
+                trend.timestamp = f"{datetime.now()}:process_article_content_generation_04"
+            except Exception as e:
+                print(e)
+                pass
+
+def update_article(postId: int, content: str, title: str, status: str = "draft") -> Optional[Dict[str, Any]]:
+    """
+    Updates an existing article on a WordPress site.
+
+    Args:
+        postId (int): The ID of the post to update.
+        content (str): The new content of the post.
+        title (str): The new title of the post.
+        status (str, optional): The new status of the post. Defaults to "draft".
+
+    Returns:
+        Optional[Dict[str, Any]]: A dictionary containing the updated post data, or None if the update failed.
+    """
+    with open('config.json', 'r') as config_file:
+        keys: dict = json.load(config_file)
+        username: str = keys["username"]
+        api_base_url: str = keys["api_base_url"]
+        application_password: str = keys["application_password"]
+
+    auth_header: str = f"{username}:{application_password}"
+    auth_header = base64.b64encode(auth_header.encode("utf-8")).decode("utf-8")
+    headers: Dict[str, str] = {"Authorization": f"Basic {auth_header}"}
+
+    post_data: Dict[str, Any] = {
+        "title": title,
+        "content": content,
+        "status": status,
+        "categories": [373]
+    }
+
+    response: requests.Response = requests.post(f"{api_base_url}posts/{postId}", headers=headers, json=post_data)
+
+    if response.status_code in [200, 201]:
+        return response.json()
+    else:
+        print(response.status_code)
+        print(f"Error editing article: {response.json()}")
+        return None
+
+def process_article_update_05() -> None:
+    """
+    Updates all articles in the database that have not been published yet.
+
+    This function retrieves all trends from the database that have an associated article ID but have not been updated on WordPress yet. It then updates each article on WordPress with the corresponding content and title from the trend. If the update is successful, the `article_wordpress_updated` field for the trend is set to True in the database.
+
+    Returns:
+        None
+    """
+    with session.begin_nested():
+        all_trends: List[Trend] = session.query(Trend).filter(Trend.article_wordpress_updated.is_(None), Trend.article_id.isnot(None)).all()
+        for trend in all_trends:
+            try:
+                trend.title = trend.title.replace('"', '')
+                update_article(postId=trend.article_id, content=trend.article, title=trend.title)
+                trend.article_wordpress_updated = True
+                trend.timestamp = f"{datetime.now()}:process_article_update_05"
+            except Exception as e:
+                print(e)
+
 
 if __name__ == '__main__':
     process_reddit_trends_01()
     process_article_title_trends_02()
     process_article_creation_03()
+    process_article_content_generation_04()
+    process_article_update_05()

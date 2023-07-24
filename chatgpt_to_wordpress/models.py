@@ -1,5 +1,5 @@
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import create_engine, Column, Integer, String
+from sqlalchemy import create_engine, Column, Integer, String, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 
 import os
@@ -15,9 +15,12 @@ class Trend(Base):
     trend_name = Column(String)
     title = Column(String)
     article_id = Column(Integer)
+    article = Column(String)
+    article_wordpress_updated = Column(Boolean)
+    timestamp=Column(String)
 
     def __repr__(self):
-        return f'Trend(id={self.id}, trend_name={self.trend_name})'
+        return f'Trend(id={self.id}, trend_name={self.trend_name}, title={self.title}, article_id={self.article_id}, article={self.article}, article_wordpress_updated={self.article_wordpress_updated})'
 
 engine = create_engine('sqlite:///data/trends.db')
 Session = sessionmaker(bind=engine)
