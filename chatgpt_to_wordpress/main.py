@@ -368,9 +368,31 @@ def tags_on_wordpress_check_and_update(tags_from_article: List[str]) -> None:
 
     return None
 
-def ensure_all_tags_exist_07() -> None:
+def add_tags_to_article(tags_array: List[int], article_id: int) -> None:
+    print(article_id)
+    print(tags_array)
+    tags: List[Dict[str, int]] = []
+    for tag in tags_array:
+        tags.append({'id': tag})
+    print(tags)
+    with open('config.json', 'r') as config_file:
+        keys: Dict[str, str] = json.load(config_file)
+        username: str = keys["username"]
+        application_password: str = keys["application_password"]
+    url: str = f"https://www.blacktwitter.eu/wp-json/wp/v2/posts/{article_id}"
+    t_: Dict[str, List[Dict[str, int]]] = {'tags': tags}
+    t_['name'] = 'newtag'
+    print(t_)
+    auth_header: str = f"{username}:{application_password}"
+    auth_header = base64.b64encode(auth_header.encode("utf-8")).decode("utf-8")
+    headers: Dict[str, str] = {"Authorization": f"Basic {auth_header}"}
+    response = requests.post(url, headers=headers, json=t_)
+    print(f"Response: {response.status_code}")
+    print(response.json())
+
+def ensure_all_tags_exist() -> None:
     with session.begin_nested():
-        trends = session.query(Trend).filter(and_(Trend.article_id != None, Trend.article != '', Trend.article_tags != None,Trend.article_status.isnot(True)),Trend.article_status.isnot('published')).all()
+        trends = session.query(Trend).filter(and_(Trend.article_id != None, Trend.article != '', Trend.article_tags.is_(None))).all()
         for trend in trends:
             try:
                 tags = trend.article_tags.split(',')
@@ -378,6 +400,48 @@ def ensure_all_tags_exist_07() -> None:
             except Exception as e:
                 print(e)
                 pass
+            
+def process_article_tags_07() -> None:
+    """
+    Processes article tags for all trends in the database that have article tags but no tags added to the article yet.
+    Retrieves all tags from the database and loops through all trends to find tags that match.
+    If a tag is found, it is added to the list of found tags. If not, it is added to the list of not found tags.
+    The list of found tags is then added to the article using the WordPress API.
+    """
+    
+    with session.begin_nested():
+        all_trends = session.query(Trend).filter(and_(Trend.article_tags.isnot(None), Trend.article_tags_added.is_(None))).all()
+        for trend in all_trends:
+            tags = get_tags()
+            ensure_all_tags_exist()
+            found_tags: List[int] = []
+            not_found_tags: List[str] = []
+            for tag in trend.article_tags.split(','):
+                try:
+                    tag_ = tag.strip()
+                    found_tags.append(tags[tag_])
+                except Exception as e:
+                    not_found_tags.append(tag_)
+                    print(e)
+            postData: Dict[str, List[int]] = {}
+            postData['tags'] = found_tags
+            # with open('config.json', 'r') as config_file:
+            #     keys: Dict[str, str] = json.load(config_file)
+            #     username: str = keys["username"]
+            #     api_base_url: str = keys["api_base_url"]
+            #     application_password: str = keys["application_password"]
+            auth_header: str = f"{username}:{application_password}"
+            auth_header = base64.b64encode(auth_header.encode("utf-8")).decode("utf-8")
+            headers: Dict[str, str] = {"Authorization": f"Basic {auth_header}"}
+            try:
+                response = requests.post(f"{api_base_url}posts/{trend.article_id}", headers=headers, json=postData)
+                trend.article_tags_added = True
+                trend.timestamp = f"{datetime.now()}:process_article_tags_07"
+            except Exception as e:
+                print(e)
+                print(f"Error: {trend.article_id}")
+                pass
+            print(f"Status Code: {response.status_code}")
 
 if __name__ == '__main__':
     process_reddit_trends_01()
@@ -386,3 +450,4 @@ if __name__ == '__main__':
     process_article_content_generation_04()
     process_article_update_05()
     process_article_tags_generation_06()
+    process_article_tags_07()
