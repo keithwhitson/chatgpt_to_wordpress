@@ -541,3 +541,4 @@ if __name__ == '__main__':
     process_article_tags_07()
     process_article_excerpts_08()
     process_article_excerpt_09()
+    process_trends_10()

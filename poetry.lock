@@ -1447,6 +1447,21 @@ pymysql = ["pymysql"]
 sqlcipher = ["sqlcipher3-binary"]
 
 [[package]]
+name = "stable-diffusion-tf"
+version = "0.1"
+description = "Stable Diffusion in Tensorflow / Keras"
+optional = false
+python-versions = "*"
+files = []
+develop = false
+
+[package.source]
+type = "git"
+url = "https://github.com/divamgupta/stable-diffusion-tensorflow.git"
+reference = "master"
+resolved_reference = "6db7e56b7f423405b4668c601409e17f0f978e55"
+
+[[package]]
 name = "tensorboard"
 version = "2.10.1"
 description = "TensorBoard lets you watch Tensors Flow"
@@ -1962,4 +1977,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = "3.8.17"
-content-hash = "b0e8f223be731b63f960e3017696b5d66044f090eb91e9f971ab0064743cd430"
+content-hash = "d209f8ac268d8c6e73a9d0ee34d0f019f3cc8d374c52444ee42cad7aeffd903c"
