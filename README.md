@@ -5,3 +5,6 @@ With this innovative tool at your disposal, you can harness the intelligence of 
 The example website used to demonstrate the tool's capabilities is [BlackTwitter.eu][1]. The tool is designed to work with any WordPress website, however.
 
 [1]: https://www.blacktwitter.eu/
+
+In order to make this work, you need to create a config file which contains the following information:
+

@@ -12,6 +12,8 @@ import requests
 AuthHeader = Dict[str, str]
 PostData = Dict[str, Union[str, Any]]
 APIResponse = Union[Dict[str, Any], None]
+from stable_diffusion_tf.stable_diffusion import StableDiffusion
+from PIL import Image
 
 
 def get_all_trends_in_db() -> List[str]:
@@ -452,6 +454,83 @@ def process_article_excerpts_08() -> None:
                 print(e)
                 break
 
+def process_article_excerpt_09() -> None:
+    """
+    Updates the excerpt of all articles in the database that have an excerpt but have not been published yet.
+    Uses the WordPress REST API to update the excerpt of each article.
+    """
+
+    def update_excerpt(excerpt: str) -> None:
+        headers: dict = {"Authorization": f"Basic {auth_header}"}
+        postData: dict = {"excerpt": excerpt}
+        response: requests.Response = requests.post(f"{api_base_url}posts/{trend.article_id}", headers=headers, data=postData)
+        print(response)
+        print(f"Response: {response.status_code}")
+        print(response.status_code)
+        print(excerpt)
+
+    with session.begin_nested():
+        all_trends = session.query(Trend).filter(and_(
+            Trend.article_excerpt.isnot(None),Trend.article_excerpt_added.is_(None)
+        ))
+
+        for trend in all_trends:
+            try:
+                update_excerpt(trend.article_excerpt)
+                trend.article_excerpt_added = True
+            except Exception as e:
+                print(e)
+
+generator = StableDiffusion(
+    img_height=300,
+    img_width=300,
+    jit_compile=True,
+)
+
+def generate_image(prompt: str, filename:str) -> None:
+    """
+    Generates an image based on the given prompt using the StableDiffusion model.
+    Saves the generated image to the specified filename.
+
+    Args:
+        prompt (str): The prompt to generate the image from.
+        filename (str): The filename to save the generated image to.
+
+    Returns:
+        None
+    """
+    img = generator.generate(
+        prompt,
+        num_steps=5,
+        unconditional_guidance_scale=10,
+        temperature=1,
+        batch_size=2,
+    )
+    Image.fromarray(img[0]).save(f"{filename}")
+
+def process_trends_10() -> None:
+    all_trends: List[Trend] = session.query(Trend).filter(and_(
+        Trend.article_id != None,
+        Trend.article != '',
+        Trend.article_tags != None,
+        Trend.article_image_location.is_(None),
+        Trend.article_status.isnot('published')
+    )).all()
+
+
+    for trend in all_trends:
+        try:
+            filename: str = f"images/{trend.article_id}.png"
+            print(trend.title)
+            generate_image(trend.title, filename)
+            trend.article_image_location: Optional[str] = filename
+            print(trend.title)
+            session.add(trend)
+        except Exception as e:
+            print(e)
+
+
+
 if __name__ == '__main__':
     process_reddit_trends_01()
     process_article_title_trends_02()
@@ -461,3 +540,4 @@ if __name__ == '__main__':
     process_article_tags_generation_06()
     process_article_tags_07()
     process_article_excerpts_08()
+    process_article_excerpt_09()
