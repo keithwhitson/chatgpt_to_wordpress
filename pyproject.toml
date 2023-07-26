@@ -2,17 +2,25 @@
 name = "chatgpt-to-wordpress"
 version = "0.1.0"
 description = ""
-authors = ["Keith Whitson <keith.whitson@franka.de>"]
+authors = ["Keith Whitson <keith.whitson@yahoo.com>"]
 readme = "README.md"
 packages = [{include = "chatgpt_to_wordpress"}]
 
+
 [tool.poetry.dependencies]
-python = "^3.10"
 sqlalchemy = "^2.0.19"
 praw = "^7.7.1"
 openai = "^0.27.8"
 alembic = "^1.11.1"
-
+python = "3.8.17"
+tensorflow = "2.10.0"
+h5py = "3.7.0"
+pillow = "9.2.0"
+tqdm = "4.64.1"
+ftfy = "6.1.1"
+regex = "2022.9.13"
+tensorflow-addons = "0.17.1"
+stable-diffusion-tf = { git = "https://github.com/divamgupta/stable-diffusion-tensorflow.git", branch = "master" }
 
 [build-system]
 requires = ["poetry-core"]
