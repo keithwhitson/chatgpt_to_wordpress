@@ -1,13 +1,13 @@
 import base64
 import praw
 from models import Trend, session
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, NoReturn, Union
 from config import my_client_id, my_client_secret, my_user_agent, my_refresh_token, openapi_key, application_password, api_base_url, username, tags_url, auth_header
 from typing import Optional
 import openai
 openai.api_key = openapi_key
 from sqlalchemy import and_
-import json
+import os
 import requests
 AuthHeader = Dict[str, str]
 PostData = Dict[str, Union[str, Any]]
@@ -482,9 +482,9 @@ def process_article_excerpt_09() -> None:
                 print(e)
 
 generator = StableDiffusion(
-    img_height=300,
-    img_width=300,
-    jit_compile=True,
+    img_height=512,
+    img_width=512,
+    jit_compile=False,
 )
 
 def generate_image(prompt: str, filename:str) -> None:
@@ -502,32 +502,93 @@ def generate_image(prompt: str, filename:str) -> None:
     img = generator.generate(
         prompt,
         num_steps=5,
-        unconditional_guidance_scale=10,
+        unconditional_guidance_scale=2,
         temperature=1,
         batch_size=2,
     )
     Image.fromarray(img[0]).save(f"{filename}")
 
 def process_trends_10() -> None:
-    all_trends: List[Trend] = session.query(Trend).filter(and_(
-        Trend.article_id != None,
-        Trend.article != '',
-        Trend.article_tags != None,
-        Trend.article_image_location.is_(None),
-        Trend.article_status.isnot('published')
-    )).all()
+    """
+    Processes all trends that have an article_id, article, article_tags, no article_image_location, and article_status is not published.
+    Generates an image based on the trend's title using the StableDiffusion model and saves it to the specified filename.
+    Updates the trend's article_image_location with the filename.
+    """
+    with session.begin_nested():
+        all_trends: List[Trend] = session.query(Trend).filter(and_(
+            Trend.article_id != None,
+            Trend.article != '',
+            Trend.article_tags != None,
+            Trend.article_image_location.is_(None),
+            Trend.article_status.isnot('published')
+        )).all()
 
 
-    for trend in all_trends:
-        try:
-            filename: str = f"images/{trend.article_id}.png"
-            print(trend.title)
-            generate_image(trend.title, filename)
-            trend.article_image_location: Optional[str] = filename
-            print(trend.title)
-            session.add(trend)
-        except Exception as e:
-            print(e)
+        for trend in all_trends:
+            try:
+                filename: str = f"images/{trend.article_id}.png"
+                if not os.path.exists(filename):
+                    generate_image(trend.title, filename)
+                trend.article_image_location: Optional[str] = filename
+                session.add(trend)
+            except Exception as e:
+                print(e)
+
+def process_update_trends_11() -> NoReturn:
+    """
+    Updates all trends that have an article_id, article, article_tags, article_image_location, and article_status is not published.
+    Uploads the trend's article_image_location to the WordPress media library and updates the trend's article_image_id with the uploaded image's ID.
+    Updates the trend's article_status to "published" and updates the trend's article_link with the link to the published article.
+
+    Returns:
+        None
+    """
+    with session.begin_nested():
+
+        all_trends = session.query(Trend).filter(and_(Trend.article_id != None,\
+            Trend.article != '', Trend.article_tags != None, \
+            Trend.article_image_location !=None,
+            Trend.article_status.isnot('published'),
+            Trend.article_status == None)).all()
+
+        for trend in all_trends:
+            try:
+                img_filename: str = trend.article_image_location
+                media_url: str = f"{api_base_url}media"
+                auth_header: str = f"{username}:{application_password}"
+                auth_header = base64.b64encode(auth_header.encode("utf-8")).decode("utf-8")
+                img_file: bytes = open(f"{img_filename}", "rb").read()
+                media_headers = {
+                    "Authorization": f"Basic {auth_header}",'Content-Type': 'image/png','Content-Disposition' : f"attachment; filename={img_filename}"
+                }
+                media_response = requests.post(media_url, headers=media_headers, data=img_file)
+                image_id: int = media_response.json()["id"]
+                trend.article_image_id = image_id
+                post_url: str = f"{api_base_url}posts/{trend.article_id}"
+                post_data = {
+                    "featured_media": image_id,
+                    "status": "publish"
+                }
+                auth_header = f"{username}:{application_password}"
+                auth_header = base64.b64encode(auth_header.encode("utf-8")).decode("utf-8")
+                post_headers = {
+                    "Authorization": f"Basic {auth_header}",
+                    "Content-Type": "application/json"
+                }
+                post_response = requests.put(post_url, json=post_data, headers=post_headers)
+                post_link: str = post_response.json().get("link","")
+                trend.article_link = post_link
+                print(post_response.status_code)
+                print(f"Link: {post_response.json().get('link','')}")
+                print(trend.title)
+                trend.article_status = "published"
+                print(media_response.status_code)
+                session.add(trend)
+
+            except Exception as e:
+                print(str(e))
+                print("error")
+                pass
 
 
 
@@ -542,3 +603,4 @@ if __name__ == '__main__':
     process_article_excerpts_08()
     process_article_excerpt_09()
     process_trends_10()
+    process_update_trends_11()
